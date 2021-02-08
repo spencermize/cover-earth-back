@@ -1,0 +1,12 @@
+--- 
+app: express-starter
+component: express
+inputs: 
+  src: ./
+  env:
+    MONGODB_URI: "${param:MONGODB_URI}"
+    STRAVA_CLIENT_ID: "${param:STRAVA_CLIENT_ID}"
+    STRAVA_CLIENT_SECRET: "${param:STRAVA_CLIENT_SECRET}"
+    SITE_URL: "${param:AWS_URL}"
+    REDIR_URL: "${param:REDIR_URL}"
+name: express-starter
