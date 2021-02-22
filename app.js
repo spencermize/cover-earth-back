@@ -39,13 +39,22 @@ app.use(compression({
   level: 9
 }));
 
+let cookie = null;
+if(process.env.AWS_EXECUTION_ENV) {
+  cookie = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+  }
+}
 app.use(session({ 
 	secret: "hoobidydoo", 
 	saveUninitialized: false, 
 	resave: true,
 	store: new MongoStore({
 		mongooseConnection: mongoose.connection
-	})
+	}),
+  cookie
 }));
 
 app.use(passport.initialize());
