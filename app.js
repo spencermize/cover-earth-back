@@ -39,13 +39,16 @@ app.use(compression({
   level: 9
 }));
 
-let cookie = null;
+let cookie = {
+  httpOnly: true
+};
+// todo: does this work?x
 if(process.env.AWS_EXECUTION_ENV) {
-  cookie = {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-  }
+  cookie.secure = true;
+  cookie.sameSite = "none";
+} else {
+  cookie.secure = false;
+  cookie.sameSite = "strict";
 }
 app.use(session({ 
 	secret: "hoobidydoo", 
