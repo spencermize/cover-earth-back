@@ -27,7 +27,7 @@ db.connect();
 const app = express();
 
 const corsOptions = {
-  origin: ['http://localhost:8080'],
+  origin: ['http://localhost:8080', 'https://thirsty-hoover-dcb557.netlify.app'],
   credentials: true
 }
 app.use(logger('dev'));

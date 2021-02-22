@@ -68,23 +68,28 @@ router.get('/:service/points/:bbox', async function(req, res, next){
 	const bbox = req.params.bbox;
 	const bboxArr = bbox.split(",");
 	const distance = turf.distance([bboxArr[0], bboxArr[1]],[bboxArr[2], bboxArr[1]]);
-
-	console.log('getting points');
+	let hrstart = process.hrtime();
+	console.log(`getting points`);
 	const points = await allPointsInBBox(bbox, req.user.id, req.params.service);
-
-	console.log('converting to FC');
+	
+	console.log(`took: ${process.hrtime(hrstart)}`);
+	hrstart = process.hrtime();
+	console.log(`converting to FC`);
 	const mp = turf.multiPoint(points);
+	console.log(`took: ${process.hrtime(hrstart)}`);
 
+	hrstart = process.hrtime();
 	const simplified = turf.explode(
 		turf.cleanCoords(
+			// mp.geometry
 			turf.truncate(mp.geometry, {
-				precision: 3,
+				precision: 4,
 				mutate: true,
 			})
 		)
 	);
 	const buf = geobuf.encode(simplified, new Pbf());
-
+	console.log(`remainder took: ${process.hrtime(hrstart)}`);
 	res.end(buf);
 });
 
@@ -98,6 +103,9 @@ async function allPointsInBBox(bBox, user, service){
 	}
 
 	const results = await activity.aggregate([
+		{
+			$match: params
+		},
 		{
 			$match: {
 				$or : [
@@ -116,9 +124,33 @@ async function allPointsInBBox(bBox, user, service){
 				]
 			}
 		},
-		{
-			$match: params
-		}
+		// {
+		// 	$project: {
+		// 		"location.coordinates": {
+		// 			"$reduce": {
+		// 				"input": {
+		// 					$map : {
+		// 						input: "$location.coordinates",
+		// 						as: "coordinate",
+		// 						in: {
+		// 							$map: {
+		// 								input: "$$coordinate",
+		// 								as: "coord",
+		// 								in: {
+		// 									$round: ["$$coord", 4]
+		// 								}
+		// 							}
+		// 						}
+		// 					}
+		// 				},
+		// 				"initialValue": [],
+		// 				"in": { 
+		// 					"$setUnion": ["$$value", ["$$this"]]
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
 	])
 	.cursor({
 		batchSize: 50
