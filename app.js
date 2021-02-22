@@ -42,14 +42,16 @@ app.use(compression({
 let cookie = {
   httpOnly: true
 };
+
 // todo: does this work?x
-if(process.env.AWS_EXECUTION_ENV) {
-  cookie.secure = true;
-  cookie.sameSite = "none";
-} else {
+if(process.env.SITE_URL.includes('localhost')) {
   cookie.secure = false;
   cookie.sameSite = "strict";
+} else {
+  cookie.secure = true;
+  cookie.sameSite = "none";
 }
+
 app.use(session({ 
 	secret: "hoobidydoo", 
 	saveUninitialized: false, 
