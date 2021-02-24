@@ -27,7 +27,8 @@ router.use(function(req, res, next) {
 	strava = new Strava();
 	strava.setId(req.user.strava.access);
 	next();
-})
+});
+
 router.get('/profile/:service', async function(req, res, next) {
 	switch (req.params.service) {
 		case "strava" : 
@@ -36,7 +37,8 @@ router.get('/profile/:service', async function(req, res, next) {
 		default :
 			res.json(false);
 	}
-})
+});
+
 router.get('/sync/:service', async function(req, res, next){
 	switch (req.params.service) {
 		case "strava" : 
@@ -45,7 +47,45 @@ router.get('/sync/:service', async function(req, res, next){
 		default :
 			res.json(false);
 	}
-})
+});
+
+router.get('/grid/:bbox', async function(req, res, next) {
+	const bBoxArray = req.params.bbox.split(',').map(loc => +loc);
+	const mask = turf.bboxPolygon(bBoxArray);
+	const size = 10;
+	const southLimit = -55;
+	const northLimit = 78;
+	const grid1 = turf.hexGrid([-180, southLimit, 0, northLimit], size, {
+		mask
+	}).features;
+	const grid2 = turf.hexGrid([0, southLimit, 180, northLimit], size, {
+		mask
+	}).features
+	const grid = turf.featureCollection([...grid1,...grid2]);
+	const points = simplifyCoords(await allPointsInBBox(req.params.bbox, req.user.id));
+	const foundFeatures = [];
+	for (const point of points.features) {
+		let found = false;
+		let index = 0;
+		try {
+			while(!found && grid.features.length && index < grid.features.length - 1) {
+				found = turf.booleanPointInPolygon(turf.point(point.geometry.coordinates), grid.features[index]);
+				index++;
+			}
+			if (found) {
+				console.log(found);
+				foundFeatures.push(Object.assign({}, grid.features[index]));
+				grid.features.splice(index, 1);
+			}
+
+		} catch(e) {
+			console.log(grid.features.length);
+		}
+	}
+
+	sendGeoBuf(res, turf.featureCollection(foundFeatures));
+});
+
 
 router.get('/:service?', async function(req, res, next){
 	const params = {
@@ -62,12 +102,10 @@ router.get('/:service?', async function(req, res, next){
 		.pipe(JSONStream.stringify())
 		.pipe(res.type('json'));
 
-})
+});
 
 router.get('/:service/points/:bbox', async function(req, res, next){
 	const bbox = req.params.bbox;
-	const bboxArr = bbox.split(",");
-	const distance = turf.distance([bboxArr[0], bboxArr[1]],[bboxArr[2], bboxArr[1]]);
 	let hrstart = process.hrtime();
 	console.log(`getting points`);
 	const points = await allPointsInBBox(bbox, req.user.id, req.params.service);
@@ -75,25 +113,30 @@ router.get('/:service/points/:bbox', async function(req, res, next){
 	console.log(`took: ${process.hrtime(hrstart)}`);
 	hrstart = process.hrtime();
 	console.log(`converting to FC`);
-	const mp = turf.multiPoint(points);
-	console.log(`took: ${process.hrtime(hrstart)}`);
 
-	hrstart = process.hrtime();
-	const simplified = turf.explode(
+	sendGeoBuf(res, simplifyCoords(points));
+});
+
+function simplifyCoords(points) {
+	const mp = turf.multiPoint(points);
+
+	return turf.explode(
 		turf.cleanCoords(
-			// mp.geometry
 			turf.truncate(mp.geometry, {
 				precision: 4,
 				mutate: true,
 			})
 		)
 	);
-	const buf = geobuf.encode(simplified, new Pbf());
-	console.log(`remainder took: ${process.hrtime(hrstart)}`);
-	res.end(buf);
-});
+}
 
-async function allPointsInBBox(bBox, user, service){
+function sendGeoBuf(res, geojson) {
+	const buf = geobuf.encode(geojson, new Pbf());
+	res.end(buf);
+}
+
+async function allPointsInBBox(bBox, user, srv){
+	const service = srv ?? 'strava';
 	const bBoxArray = bBox.split(',').map(loc => +loc);
 	const feature = turf.bboxPolygon(bBoxArray);
 
@@ -123,34 +166,7 @@ async function allPointsInBBox(bBox, user, service){
 					}
 				]
 			}
-		},
-		// {
-		// 	$project: {
-		// 		"location.coordinates": {
-		// 			"$reduce": {
-		// 				"input": {
-		// 					$map : {
-		// 						input: "$location.coordinates",
-		// 						as: "coordinate",
-		// 						in: {
-		// 							$map: {
-		// 								input: "$$coordinate",
-		// 								as: "coord",
-		// 								in: {
-		// 									$round: ["$$coord", 4]
-		// 								}
-		// 							}
-		// 						}
-		// 					}
-		// 				},
-		// 				"initialValue": [],
-		// 				"in": { 
-		// 					"$setUnion": ["$$value", ["$$this"]]
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// }
+		}
 	])
 	.cursor({
 		batchSize: 50
@@ -167,7 +183,6 @@ async function allPointsInBBox(bBox, user, service){
 			.on('end', () => {
 				res(resArray);
 			});
-	})
-
+	});
 }
 module.exports = router;
