@@ -136,7 +136,7 @@ function sendGeoBuf(res, geojson) {
 }
 
 async function allPointsInBBox(bBox, user, srv){
-	const service = srv ?? 'strava';
+	const service = srv || 'strava';
 	const bBoxArray = bBox.split(',').map(loc => +loc);
 	const feature = turf.bboxPolygon(bBoxArray);
 
