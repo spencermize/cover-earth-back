@@ -18,11 +18,6 @@ const activity = mongoose.model('Activity', Activity);
 const auth = require('./auth').auth;
 router.use(auth);
 
-const obs = new PerformanceObserver((items) => {
-  console.log(`${items.getEntries()[0].name}: ${items.getEntries()[0].duration}`);
-});
-obs.observe({ entryTypes: ['measure'] });
-
 router.use(function(req, res, next) {
 	strava = new Strava();
 	strava.setId(req.user.strava.access);
@@ -104,15 +99,21 @@ router.get('/:service?', async function(req, res, next){
 
 });
 
+router.get('/:service/activities/:bbox?', async function(req, res, next){
+	const bbox = req.params.bbox || 'all';
+	
+	const activities = await allActivitiesInBBox(bbox, req.user.id, req.params.service);
+	const ret = activities.map(activity => {
+		return Object.fromEntries(Object.entries(activity).filter(([_, v]) => v != null));
+	});
+
+	res.json(ret);
+
+});
+
 router.get('/:service/points/:bbox', async function(req, res, next){
 	const bbox = req.params.bbox;
-	let hrstart = process.hrtime();
-	console.log(`getting points`);
-	const points = await allPointsInBBox(bbox, req.user.id, req.params.service);
-	
-	console.log(`took: ${process.hrtime(hrstart)}`);
-	hrstart = process.hrtime();
-	console.log(`converting to FC`);
+	const points = await allActivitiesInBBox(bbox, req.user.id, req.params.service, 'coords');
 
 	sendGeoBuf(res, simplifyCoords(points));
 });
@@ -135,50 +136,67 @@ function sendGeoBuf(res, geojson) {
 	res.end(buf);
 }
 
-async function allPointsInBBox(bBox, user, srv){
-	const service = srv ?? 'strava';
-	const bBoxArray = bBox.split(',').map(loc => +loc);
-	const feature = turf.bboxPolygon(bBoxArray);
+async function allActivitiesInBBox(bBox, user, srv, filter){
+	const resArray = [];
+	const service = srv || 'strava';
+	const filters = filter || 'coords'; // don't include these
+
+	if (bBox !== 'all') {
+		const bBoxArray = bBox.split(',').map(loc => +loc);
+		const feature = turf.bboxPolygon(bBoxArray);
+	}
 
 	const params = {
 		user,
 		service
 	}
 
+	const bboxQuery = bBox === 'all' ? {
+		$match: {
+
+		}
+	} : {
+		$match: {
+			$or : [
+				{ 'location' : {
+						$geoIntersects: {
+							$geometry: feature.geometry
+						}
+					},
+				},
+				{ 'location' : {
+						$geoWithin: {
+							$geometry: feature.geometry
+						}
+					}
+				}
+			]
+		}
+	};
 	const results = await activity.aggregate([
 		{
 			$match: params
 		},
+		bboxQuery,
 		{
-			$match: {
-				$or : [
-					{ 'location' : {
-							$geoIntersects: {
-								$geometry: feature.geometry
-							}
-						},
-					},
-					{ 'location' : {
-							$geoWithin: {
-								$geometry: feature.geometry
-							}
-						}
-					}
-				]
+			$project: {
+				'location' : !filters.includes('coords')
 			}
 		}
 	])
 	.cursor({
 		batchSize: 50
 	})
-	.exec()
-
-	const resArray = [];
+	.exec();
 
 	return new Promise((res, rej) => {
 		results
 			.on('data', (doc) => {
-				resArray.push(...doc.location.coordinates);
+				if (!filters.includes('coords')) {
+					resArray.push(...doc.location.coordinates);
+				} else {
+					resArray.push(doc);
+				}
 			})
 			.on('end', () => {
 				res(resArray);

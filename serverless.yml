@@ -1,10 +1,6 @@
 --- 
 app: express-starter
 component: express
-provider:
-  name: aws
-  runtime: nodejs14.x
-  versionFunctions: false # optional, default is true
 inputs: 
   src: ./
   env:

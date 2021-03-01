@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const stravaApi = require('strava-v3');
 const mongoose = require('mongoose');
-const flip = require('@turf/flip');
 
 const Activity = require('../models/Activity');
-
+const turf = require('@turf/turf');
 class Strava {
 	constructor() {
 		this.config();
@@ -32,92 +31,90 @@ class Strava {
 		const activities = [];
 		const service = 'strava';
 		let keepLooping = true;
+		try {
+			while( keepLooping ) {
+				const results = await stravaApi.athlete.listActivities({
+					page,
+					// eslint-disable-next-line @typescript-eslint/camelcase
+					per_page: perPage
+				});
+				console.log(page);
+				activities.push(...results);
 
-		while( keepLooping ) {
-			const results = await stravaApi.athlete.listActivities({
-				page,
-				// eslint-disable-next-line @typescript-eslint/camelcase
-				per_page: perPage
-			});
-			console.log(page);
-			activities.push(...results);
-
-			if ( results.length === perPage ){
-				keepLooping = true;
-				page++;
-			} else {
-				keepLooping = false;
+				if ( results.length === perPage ){
+					keepLooping = true;
+					page++;
+				} else {
+					keepLooping = false;
+				}
 			}
-		}
-		console.log(`found ${activities.length} activities at Strava`);
+			console.log(`found ${activities.length} activities at Strava`);
 
-		/* TODO: do one big query to filter out ones to not sync */
-		
-		for (let i=0; i < activities.length; i++){
-			const act = activities[i];
-			await new Promise( (resolve, reject) => {
+			/* TODO: do one big query to filter out ones to not sync */
+			
+			for (let i=0; i < activities.length; i++){
+				const act = activities[i];
 				const activity = mongoose.model('Activity', Activity);
 				if (this.disallowed(act)) {
 					activity.deleteOne({id: act.id.toString(), user, service}, function(){
-						console.log(act.id);
-						resolve();
+						console.log(`deleting: ${act.id}`);
 					});
 				} else {
-					activity.findOne({id: act.id.toString(), user, service}, async function(err, doc){
-						if(doc && doc.location && doc.location.coordinates && doc.location.coordinates.length){
-							console.log('already synced')
-						} else {
-							console.log(`found a fresh one: ${act.id}`);
-							let coords;
-							try{
-								console.log("loading from strava...");
-								coords = await stravaApi.streams.activity({
-									types: "latlng",
-									id: act.id
-								}).filter( ret => ret.type == 'latlng' );
-							} catch (e) {
-								console.log(`Does not exist in Strava: ${act.id}`);
-							}
+					const doc = await activity.findOne({id: act.id.toString(), user, service}).exec();
 
-							if (coords && coords.length) { 
-								await new Promise( (res, rej) =>{
-									let location = {
-										type: "MultiPoint",
-										coordinates: coords[0].data
-									}
-									const options = { upsert: true, new: true, setDefaultsOnInsert: true };
+					if(doc && doc.location && doc.location.coordinates && doc.location.coordinates.length && doc.meta){
+						console.log('already synced');
+					} else {
+						console.log(`found a fresh one: ${act.id}`);
+						let coords;
+						let activityObj;
+						try{
+							console.log("loading from strava...");
+							coords = await stravaApi.streams.activity({
+								types: "latlng",
+								id: act.id
+							}).filter( ret => ret.type == 'latlng' );
 
-									location = flip(location);
-
-									const params = {
-										id: act.id.toString(),
-										last: Date.now(),
-										service,
-										user,
-										location
-									}	
-									activity.findOneAndUpdate({'id' : act.id, service}, params, options, function(err){
-										if (err) { 
-											console.log(err);
-											rej(); 
-										}
-										console.log('updated');
-										res();
-									});
-									
-								});
-							} else {
-								console.log('invalid, no coordinates');
-							}
+							activityObj = await stravaApi.activities.get({
+								id: act.id
+							})
+						} catch (e) {
+							console.log(`Does not exist in Strava: ${act.id}`);
 						}
-						
-						resolve();						
-					});
-				}
-			});
-		}
 
-		return {success: true}		
+						if (coords && coords.length) { 
+							let location = turf.flip(turf.multiPoint(coords[0].data)).geometry;
+
+							const options = { upsert: true, new: true, setDefaultsOnInsert: true };
+
+							const params = {
+								id: act.id.toString(),
+								last: Date.now(),
+								service,
+								user,
+								location,
+								meta: activityObj
+							}	
+
+							if (doc) {
+								await doc.set(params);
+								doc.markModified('meta');
+								console.log('updated');
+							} else {
+								await activity.create(params);
+								console.log('created');
+							}
+						} else {
+							console.log('invalid, no coordinates');
+						}
+					}
+				}
+			}
+
+			return {success: true}
+		} catch (e) {
+			return {success: false}
+		}
 	}
 }
 

@@ -13,7 +13,8 @@ const Activity = new Schema({
 	last: String,
 	service: String,
 	user: String,
-	location: MultiPoint
+	location: MultiPoint,
+	meta: {}
 });
 
 module.exports = Activity;
