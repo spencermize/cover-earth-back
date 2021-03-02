@@ -3,6 +3,7 @@ const stravaApi = require('strava-v3');
 const mongoose = require('mongoose');
 
 const Activity = require('../models/Activity');
+const User = require('../models/User');
 const turf = require('@turf/turf');
 class Strava {
 	constructor() {
@@ -25,12 +26,48 @@ class Strava {
 			!act.upload_id;
 	}
 
+	async pushActivity(act) {
+		const activity = mongoose.model('Activity', Activity);
+		const user = mongoose.model('User', User);
+		const service = 'strava';
+
+		const stravaUser = user.findOne({'strava.id': act.owner_id});
+		if (act.aspect_type === 'delete') {
+			act.deleteOne({id: act.object_id, service}, function(){
+				console.log(`deleting: ${act.id}`);
+			});
+		} else {
+			const params = {
+				id: act.object_id.toString(),
+				last: Date.now(),
+				service,
+				user: stravaUser._id
+			}	
+			const doc = await activity.findOne({id: act.object_id.toString(), user, service}).exec();
+			if (doc) {
+				await doc.set(params);
+				console.log('updated');
+			} else {
+				await activity.create(params);
+				console.log('created');
+			}
+		}
+	}
+
 	async loadAll(user){
 		let page = 1;
 		const perPage = 200;
 		const activities = [];
 		const service = 'strava';
 		let keepLooping = true;
+		const subs = await stravaApi.pushSubscriptions.list();
+		if(!subs) {
+			const sub = strava.pushSubscriptions.create({
+				callback_url: `${process.env.SITE_URL}/api/locations/strava/push`
+			});
+
+			console.log(sub);
+		}
 		try {
 			while( keepLooping ) {
 				const results = await stravaApi.athlete.listActivities({

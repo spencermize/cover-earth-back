@@ -64,6 +64,7 @@ app.use(session({
 
 app.use(passport.initialize());
 app.use(passport.session());
+app.use(express.json());
 
 app.use('/auth', authRouter.router);
 app.use('/api', apiRouter);

@@ -15,14 +15,25 @@ let strava;
 
 const Activity = require('../includes/models/Activity');
 const activity = mongoose.model('Activity', Activity);
-const auth = require('./auth').auth;
-router.use(auth);
+const auth = require('./auth').auth
 
-router.use(function(req, res, next) {
+const unless = function(path, middleware) {
+    return function(req, res, next) {
+        if (path === req.path) {
+            return next();
+        } else {
+            return middleware(req, res, next);
+        }
+    };
+};
+
+router.use(unless('/strava/push', auth));
+
+router.use(unless('/strava/push', function(req, res, next) {
 	strava = new Strava();
 	strava.setId(req.user.strava.access);
 	next();
-});
+}));
 
 router.get('/profile/:service', async function(req, res, next) {
 	switch (req.params.service) {
@@ -81,6 +92,20 @@ router.get('/grid/:bbox', async function(req, res, next) {
 	sendGeoBuf(res, turf.featureCollection(foundFeatures));
 });
 
+router.get('/strava/push', function(req, res, next){
+	console.log(req);
+	res.json({'hub.challenge' : req.query['hub.challenge']});
+});
+
+router.post('/strava/push', async function(req, res, next){
+	const strava = new Strava();
+	if (req.body.object_type === 'activity') {
+		await strava.pushActivity(req.body);
+		res.json({});
+	} else {
+		res.status(400).send();
+	}
+});
 
 router.get('/:service?', async function(req, res, next){
 	const params = {
