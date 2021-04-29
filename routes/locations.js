@@ -138,7 +138,7 @@ router.get('/:service/activities/:bbox?', async function(req, res, next){
 
 router.get('/:service/points/:bbox', async function(req, res, next){
 	const bbox = req.params.bbox;
-	const points = await allActivitiesInBBox(bbox, req.user.id, req.params.service, 'coords');
+	const points = await allActivitiesInBBox(bbox, req.user.id, req.params.service, true);
 
 	sendGeoBuf(res, simplifyCoords(points));
 });
@@ -165,10 +165,11 @@ async function allActivitiesInBBox(bBox, user, srv, filter){
 	const resArray = [];
 	const service = srv || 'strava';
 	const filters = filter || 'coords'; // don't include these
-
+	let feature = null;
+	
 	if (bBox !== 'all') {
 		const bBoxArray = bBox.split(',').map(loc => +loc);
-		const feature = turf.bboxPolygon(bBoxArray);
+		feature = turf.bboxPolygon(bBoxArray);
 	}
 
 	const params = {
@@ -205,7 +206,7 @@ async function allActivitiesInBBox(bBox, user, srv, filter){
 		bboxQuery,
 		{
 			$project: {
-				'location' : !filters.includes('coords')
+				'location' : filters || !filters.includes('coords')
 			}
 		}
 	])
@@ -217,7 +218,7 @@ async function allActivitiesInBBox(bBox, user, srv, filter){
 	return new Promise((res, rej) => {
 		results
 			.on('data', (doc) => {
-				if (!filters.includes('coords')) {
+				if (filters || !filters.includes('coords')) {
 					resArray.push(...doc.location.coordinates);
 				} else {
 					resArray.push(doc);

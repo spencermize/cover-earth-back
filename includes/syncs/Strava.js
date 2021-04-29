@@ -63,7 +63,7 @@ class Strava {
 		const subs = await stravaApi.pushSubscriptions.list();
 		if(!subs) {
 			const sub = strava.pushSubscriptions.create({
-				callback_url: `${process.env.SITE_URL}/api/locations/strava/push`
+				callback_url: `https://323wfwhg31.execute-api.us-east-1.amazonaws.com/api/locations/strava/push`
 			});
 
 			console.log(sub);
