@@ -161,10 +161,10 @@ function sendGeoBuf(res, geojson) {
 	res.end(buf);
 }
 
-async function allActivitiesInBBox(bBox, user, srv, filter){
+async function allActivitiesInBBox(bBox, user, srv, includeCoords){
 	const resArray = [];
 	const service = srv || 'strava';
-	const filters = filter || 'coords'; // don't include these
+	const includeCoordinates = includeCoords || false;
 	let feature = null;
 	
 	if (bBox !== 'all') {
@@ -206,7 +206,7 @@ async function allActivitiesInBBox(bBox, user, srv, filter){
 		bboxQuery,
 		{
 			$project: {
-				'location' : filters || !filters.includes('coords')
+				'location' : includeCoordinates
 			}
 		}
 	])
@@ -218,7 +218,7 @@ async function allActivitiesInBBox(bBox, user, srv, filter){
 	return new Promise((res, rej) => {
 		results
 			.on('data', (doc) => {
-				if (filters || !filters.includes('coords')) {
+				if (includeCoordinates) {
 					resArray.push(...doc.location.coordinates);
 				} else {
 					resArray.push(doc);
